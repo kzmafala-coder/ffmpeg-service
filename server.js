@@ -358,13 +358,18 @@ app.post('/render', upload.single('video'), async (req, res) => {
 
     // ---- run ffmpeg ----
     // Keep template duration, audio and design intact; only overlay text.
+    // Encoder settings are deliberately light so the job fits into a small
+    // Railway container (heavy presets get OOM-killed on 1080x1920). Tune
+    // via env: FF_PRESET (default veryfast), FF_CRF (default 23),
+    // FF_THREADS (default 1 to cap memory).
     const args = [
       '-y',
+      '-threads', String(process.env.FF_THREADS || 1),
       '-i', inputPath,
       '-vf', filterComplex,
       '-c:v', 'libx264',
-      '-preset', 'medium',
-      '-crf', '18',
+      '-preset', process.env.FF_PRESET || 'veryfast',
+      '-crf', String(process.env.FF_CRF || 23),
       '-pix_fmt', 'yuv420p',
       '-c:a', 'copy',
       '-movflags', '+faststart',
