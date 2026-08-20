@@ -60,6 +60,51 @@ const GEOMETRY = {
   },
 };
 
+// ------------------------------------------------------------------
+// Output resolution.
+// The template geometry above is authored for a 1080x1920 base. To fit
+// the render into a small (~512 MB) Railway container, we downscale the
+// whole pipeline to a lower resolution and scale ALL geometry
+// (positions, widths, font sizes) by the SAME factor, so the layout
+// stays identical relative to the template frames — only smaller.
+//
+// h264 encode memory grows ~linearly with pixel count:
+//   1080x1920 = 2.07 MP  -> too big for 512 MB (OOM-killed at frame 1)
+//    900x1600 = 1.44 MP  -> ~69% of the pixels, medium margin (default)
+//    720x1280 = 0.92 MP  -> ~44% of the pixels, largest margin (safest)
+//
+// Default is 900x1600 for sharper text with a still-workable memory
+// margin on 512 MB. If renders ever get OOM-killed, drop to 720x1280
+// via env. If you later raise container memory (e.g. to 1 GB) you can
+// restore full quality with OUT_WIDTH=1080 and OUT_HEIGHT=1920.
+// ------------------------------------------------------------------
+const OUTPUT = {
+  width: Number(process.env.OUT_WIDTH || 900),
+  height: Number(process.env.OUT_HEIGHT || 1600),
+};
+// Scale factor relative to the 1080x1920 authoring base.
+const SCALE = OUTPUT.height / GEOMETRY.video.height;
+
+// Scale one geometry block's numeric fields (but NOT max_lines).
+function scaleBlock(b) {
+  return {
+    ...b,
+    x: b.x != null ? Math.round(b.x * SCALE) : b.x,
+    y: b.y != null ? Math.round(b.y * SCALE) : b.y,
+    max_width: Math.round(b.max_width * SCALE),
+    font_size: Math.max(1, Math.round(b.font_size * SCALE)),
+    min_font_size: Math.max(1, Math.round(b.min_font_size * SCALE)),
+  };
+}
+
+// Apply the scale to every text block and to the working video size.
+if (SCALE !== 1) {
+  GEOMETRY.question = scaleBlock(GEOMETRY.question);
+  ['A', 'B', 'C', 'D'].forEach((k) => { GEOMETRY.answers[k] = scaleBlock(GEOMETRY.answers[k]); });
+  GEOMETRY.explanation = scaleBlock(GEOMETRY.explanation);
+}
+GEOMETRY.video = { width: OUTPUT.width, height: OUTPUT.height };
+
 // Default timeline (seconds) for a ~32s clip. Any of these can be
 // overridden by the matching payload field from n8n.
 const DEFAULT_TIMING = {
@@ -352,24 +397,28 @@ app.post('/render', upload.single('video'), async (req, res) => {
       );
     }
 
-    const filterComplex = filters.join(',');
+    // Downscale the template to the working resolution FIRST, so the
+    // decode -> drawtext -> encode pipeline runs entirely in the smaller
+    // (memory-friendly) frame size. All drawtext coordinates above are
+    // already expressed in this scaled space.
+    const scaleFilter = `scale=${OUTPUT.width}:${OUTPUT.height}:flags=bicubic`;
+    const filterComplex = [scaleFilter, ...filters].join(',');
     const inputPath = req.file.path;
     const outputPath = path.join(tmpDir, 'output.mp4');
 
     // ---- run ffmpeg ----
     // Keep template duration, audio and design intact; only overlay text.
-    // Encoder settings are deliberately as light as possible so the job
-    // fits into a small Railway container (~512 MB) without OOM, while
-    // keeping resolution at 1080x1920 so the overlaid text stays crisp.
+    // The frame is already downscaled to OUTPUT (default 900x1600) by the
+    // scale filter above, which is the main memory saver for a ~512 MB
+    // Railway container. Encoder settings below are additionally kept as
+    // light as possible.
     //
-    // Memory in x264 is driven mainly by PRESET and THREADS, not CRF:
+    // Memory in x264 is driven mainly by RESOLUTION, then PRESET/THREADS:
     //   - preset ultrafast disables look-ahead / B-frames / multi-ref
     //     (ref=1), which is the single biggest memory saver.
     //   - threads 1 caps the number of frame buffers held in memory.
     //   - crf 26 lowers bitrate/work; text is high-contrast so it stays
     //     perfectly readable at this CRF.
-    //   - resolution is intentionally NOT reduced (that would blur the
-    //     text and break the fixed template geometry).
     // Extra x264 params force the lowest-memory path even if a heavier
     // preset is set via env.
     // Tune via env: FF_PRESET (default ultrafast), FF_CRF (default 26),
@@ -407,7 +456,7 @@ app.post('/render', upload.single('video'), async (req, res) => {
           exitCode: code,
           signal: signal || null,
           likelyOutOfMemory: oom,
-          hint: oom ? 'Container was OOM-killed. Increase Railway memory to 1-2 GB (Settings -> Resources).' : undefined,
+          hint: oom ? 'Container was OOM-killed. Lower OUT_WIDTH/OUT_HEIGHT (e.g. 720x1280) or increase Railway memory.' : undefined,
           detail: stderr.slice(-1200),
         });
       }
