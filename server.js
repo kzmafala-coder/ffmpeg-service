@@ -37,14 +37,19 @@ const upload = multer({ dest: os.tmpdir() });
 // they are the base geometry of the template.
 // Coordinates are the CENTER point of each text block.
 // ------------------------------------------------------------------
+// min_font_size values are intentionally lower than the design font_size so
+// that longer questions/answers still fit inside the SAME frame (width and
+// position are unchanged) by shrinking the text a bit rather than failing to
+// render. Text stays readable; this is the safe lever that never touches the
+// template layout. Base is 1080x1920; values are auto-scaled to OUTPUT below.
 const GEOMETRY = {
   video: { width: 1080, height: 1920 },
-  question: { x: 540, y: 484, max_width: 800, font_size: 56, min_font_size: 42, max_lines: 3 },
+  question: { x: 540, y: 484, max_width: 800, font_size: 56, min_font_size: 34, max_lines: 3 },
   answers: {
-    A: { x: 567, y: 829, max_width: 440, font_size: 36, min_font_size: 28, max_lines: 1 },
-    B: { x: 567, y: 1006, max_width: 440, font_size: 36, min_font_size: 28, max_lines: 1 },
-    C: { x: 567, y: 1179, max_width: 440, font_size: 36, min_font_size: 28, max_lines: 1 },
-    D: { x: 567, y: 1361, max_width: 440, font_size: 36, min_font_size: 28, max_lines: 1 },
+    A: { x: 567, y: 829, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
+    B: { x: 567, y: 1006, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
+    C: { x: 567, y: 1179, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
+    D: { x: 567, y: 1361, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
   },
   // Explanation block. Defaults are centered on screen; override per
   // request via payload fields (explanation_x, explanation_y,
