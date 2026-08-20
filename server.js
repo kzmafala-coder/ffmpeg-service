@@ -45,23 +45,31 @@ const upload = multer({ dest: os.tmpdir() });
 const GEOMETRY = {
   video: { width: 1080, height: 1920 },
   question: { x: 540, y: 484, max_width: 800, font_size: 56, min_font_size: 34, max_lines: 3 },
+  // Answer Y coordinates nudged down by +6px (base 1080) per request
+  // ("чуть вниз, буквально на пол миллиметра"). ~6px @1080 ≈ 0.5mm.
   answers: {
-    A: { x: 567, y: 829, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
-    B: { x: 567, y: 1006, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
-    C: { x: 567, y: 1179, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
-    D: { x: 567, y: 1361, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
+    A: { x: 567, y: 835, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
+    B: { x: 567, y: 1012, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
+    C: { x: 567, y: 1185, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
+    D: { x: 567, y: 1367, max_width: 440, font_size: 36, min_font_size: 24, max_lines: 1 },
   },
   // Explanation block. Defaults are centered on screen; override per
   // request via payload fields (explanation_x, explanation_y,
   // explanation_max_width, explanation_font_size, explanation_min_font_size,
   // explanation_max_lines) or the EXPL_* env vars.
+  // Explanation block (base 1080x1920), centered on the box:
+  //   box: X 232..848 (width 616), Y 346..1065 (height 719)
+  //   center: X = 540, Y = 706
+  // max_lines is capped so the text block never exceeds the 719px box
+  // height at font_size 44 (44 * 1.15 line spacing * 8 lines ~= 405px,
+  // well within 719; the fitText autosizer keeps it inside max_width 616).
   explanation: {
     x: Number(process.env.EXPL_X || 540),
-    y: Number(process.env.EXPL_Y || 960),
-    max_width: Number(process.env.EXPL_MAX_WIDTH || 880),
+    y: Number(process.env.EXPL_Y || 706),
+    max_width: Number(process.env.EXPL_MAX_WIDTH || 616),
     font_size: Number(process.env.EXPL_FONT_SIZE || 44),
     min_font_size: Number(process.env.EXPL_MIN_FONT_SIZE || 32),
-    max_lines: Number(process.env.EXPL_MAX_LINES || 5),
+    max_lines: Number(process.env.EXPL_MAX_LINES || 8),
   },
 };
 
