@@ -358,18 +358,32 @@ app.post('/render', upload.single('video'), async (req, res) => {
 
     // ---- run ffmpeg ----
     // Keep template duration, audio and design intact; only overlay text.
-    // Encoder settings are deliberately light so the job fits into a small
-    // Railway container (heavy presets get OOM-killed on 1080x1920). Tune
-    // via env: FF_PRESET (default veryfast), FF_CRF (default 23),
-    // FF_THREADS (default 1 to cap memory).
+    // Encoder settings are deliberately as light as possible so the job
+    // fits into a small Railway container (~512 MB) without OOM, while
+    // keeping resolution at 1080x1920 so the overlaid text stays crisp.
+    //
+    // Memory in x264 is driven mainly by PRESET and THREADS, not CRF:
+    //   - preset ultrafast disables look-ahead / B-frames / multi-ref
+    //     (ref=1), which is the single biggest memory saver.
+    //   - threads 1 caps the number of frame buffers held in memory.
+    //   - crf 26 lowers bitrate/work; text is high-contrast so it stays
+    //     perfectly readable at this CRF.
+    //   - resolution is intentionally NOT reduced (that would blur the
+    //     text and break the fixed template geometry).
+    // Extra x264 params force the lowest-memory path even if a heavier
+    // preset is set via env.
+    // Tune via env: FF_PRESET (default ultrafast), FF_CRF (default 26),
+    // FF_THREADS (default 1).
     const args = [
       '-y',
       '-threads', String(process.env.FF_THREADS || 1),
       '-i', inputPath,
       '-vf', filterComplex,
       '-c:v', 'libx264',
-      '-preset', process.env.FF_PRESET || 'veryfast',
-      '-crf', String(process.env.FF_CRF || 23),
+      '-preset', process.env.FF_PRESET || 'ultrafast',
+      '-crf', String(process.env.FF_CRF || 26),
+      '-x264-params', process.env.FF_X264_PARAMS ||
+        'rc-lookahead=0:ref=1:bframes=0:sync-lookahead=0:sliced-threads=0:me=dia:subme=1',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'copy',
       '-movflags', '+faststart',
@@ -380,12 +394,22 @@ app.post('/render', upload.single('video'), async (req, res) => {
     let stderr = '';
     ff.stderr.on('data', (d) => { stderr += d.toString(); });
 
-    ff.on('close', (code) => {
+    ff.on('close', (code, signal) => {
       fs.unlink(inputPath, () => {});
       if (code !== 0 || !fs.existsSync(outputPath)) {
-        console.error(`[${job}] ffmpeg failed (code ${code}):\n${stderr.slice(-2000)}`);
+        console.error(`[${job}] ffmpeg failed (code ${code}, signal ${signal}):\n${stderr.slice(-2000)}`);
         cleanup();
-        return res.status(500).json({ error: 'FFMPEG_FAILED', detail: stderr.slice(-1000) });
+        // code 137 / signal SIGKILL almost always means the container ran
+        // out of memory (OOM-killed). Surface that explicitly.
+        const oom = code === 137 || signal === 'SIGKILL';
+        return res.status(500).json({
+          error: 'FFMPEG_FAILED',
+          exitCode: code,
+          signal: signal || null,
+          likelyOutOfMemory: oom,
+          hint: oom ? 'Container was OOM-killed. Increase Railway memory to 1-2 GB (Settings -> Resources).' : undefined,
+          detail: stderr.slice(-1200),
+        });
       }
       res.setHeader('Content-Type', 'video/mp4');
       res.setHeader('Content-Disposition', `attachment; filename="quiz_${job}.mp4"`);
