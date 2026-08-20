@@ -1,8 +1,8 @@
 /**
  * Quiz FFmpeg Render Service
  * -------------------------------------------------------------
- * Overlays a dynamic question + 4 answers (+ explanation) onto a
- * pre-designed vertical 1080x1920 video template using FFmpeg drawtext.
+ * Overlays a dynamic question + 4 answers onto a pre-designed
+ * vertical 1080x1920 video template using FFmpeg drawtext.
  *
  * The template already contains: background, question frame, four
  * answer frames, the A: B: C: D: letters, animation and sound.
@@ -10,8 +10,8 @@
  * coordinates. It never changes the design, frame positions or sizes.
  *
  * Endpoint:  POST /render   (multipart/form-data)
- *   - video   : the template video file (binary)              [required]
- *   - payload : JSON string with question + answers + timing   [required]
+ *   - video : the template video file (binary)             [required]
+ *   - payload : JSON string with question + answers + timing [required]
  *   Alternatively the same fields can be sent flat as form fields.
  *
  * Response: the rendered MP4 as a binary download.
@@ -167,7 +167,8 @@ function buildBlockFilters(lines, fontSize, centerX, centerY, tmpDir, tag, enabl
       `textfile='${tf.replace(/\\/g, '/').replace(/:/g, '\\:')}'`,
       `fontsize=${fontSize}`,
       `fontcolor=${process.env.FONT_COLOR || 'white'}`,
-      // horizontal center on centerX (anchor to centerX explicitly):
+      // horizontal center on centerX; (w-text_w)/2 would center on screen,
+      // so we anchor to centerX explicitly:
       `x=${centerX}-(text_w/2)`,
       `y=${Math.round(lineTopY)}`,
     ];
